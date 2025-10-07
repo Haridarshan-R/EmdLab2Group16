@@ -1,61 +1,49 @@
 #include <stdint.h>
+#include <stdbool.h>
 #include "tm4c123gh6pm.h"
 
-#define TAEN    (1<<0)
-#define TAAMS   (1<<3)
-#define TAPWML  (1<<6)
-#define RED     (1<<1)
-#define BLUE    (1<<2)
-void delay(void) {
-    int i;
-    for (i = 0; i < 500000; i++);
-}
+#define STCTRL               (*((volatile uint32_t *)0xE000E010))
+#define STRELOAD             (*((volatile uint32_t *)0xE000E014))
+#define STCURRENT            (*((volatile uint32_t *)0xE000E018))
+
+#define ENABLE   1
+#define CLK_SRC  (1<<2)
+#define COUNT    (1<<16)
+#define RED      (1<<1)
+#define BLUE     (1<<2)
+
+void poll_sw1(void);
 
 int main(void)
 {
-    // Enable Port F for switches
-    SYSCTL_RCGC2_R     |= 0x20;
-    GPIO_PORTF_LOCK_R   = 0x4C4F434B;
-    GPIO_PORTF_CR_R     = 0x1F;
-    GPIO_PORTF_DIR_R    = 0x0E;
-    GPIO_PORTF_DEN_R   |= 0x1F;
-    GPIO_PORTF_PUR_R   |= 0x11;
+    SYSCTL_RCGC2_R |= 0x20;          // Enable clock to Port F
+    GPIO_PORTF_LOCK_R = 0x4C4F434B;
+    GPIO_PORTF_CR_R   = 0x1F;        // Unlock PF0–PF4
+    GPIO_PORTF_DEN_R  = 0x1F;        // Digital enable
+    GPIO_PORTF_DIR_R  = 0x0E;        // PF1–PF3 output, PF0/PF4 input
+    GPIO_PORTF_PUR_R  = 0x11;        // Pull-ups for PF0, PF4
+    GPIO_PORTF_DATA_R = 0x00;
 
-    // Enable Wide Timer 0 and Port C
-    SYSCTL_RCGCWTIMER_R |= (1<<0);
-    SYSCTL_RCGC2_R |= (1<<2);
-
-    // Configure PC4 for WT0CCP0
-    GPIO_PORTC_AFSEL_R |= (1<<4);
-    GPIO_PORTC_PCTL_R = (GPIO_PORTC_PCTL_R & 0xFFF0FFFF) | (7<<16);
-    GPIO_PORTC_DEN_R |= (1<<4);
-    GPIO_PORTC_DIR_R |= (1<<4);
-
-    // Configure Wide Timer 0A for PWM
-    WTIMER0_CTL_R &= ~TAEN;           // Disable Timer A
-    WTIMER0_CFG_R = 0x04;             // PWM mode
-    WTIMER0_TAMR_R = 0x0A;            
-    WTIMER0_CTL_R &= ~TAPWML;         // Non-inverted PWM
-    WTIMER0_TAPR_R = 0;               // No prescaler
-    WTIMER0_TAILR_R = 319;            // 50 kHz
-    WTIMER0_TAMATCHR_R = 159;         // 50% duty
-    WTIMER0_CTL_R |= TAEN;            // Enable Timer A
+    STRELOAD  = (1<<24)-1;
+    STCURRENT = 0;                   // Clear current
+    STCTRL   |= CLK_SRC;             // SysTick with core clock
 
     while(1)
     {
-        if ((GPIO_PORTF_DATA_R & 0x01) == 0) {  // SW2 pressed
-            WTIMER0_TAMATCHR_R += 16;
-            if (WTIMER0_TAMATCHR_R > WTIMER0_TAILR_R - 16)
-                WTIMER0_TAMATCHR_R = WTIMER0_TAILR_R - 16;
-            GPIO_PORTF_DATA_R   = RED;
-            delay();
+        poll_sw1();
+        STCTRL |= ENABLE;
+        while ((STCTRL & COUNT) == 0)
+        {
+            poll_sw1();
         }
-        if ((GPIO_PORTF_DATA_R & 0x10) == 0) {  // SW1 pressed
-            if (WTIMER0_TAMATCHR_R > 16)
-                WTIMER0_TAMATCHR_R -= 16;
-            GPIO_PORTF_DATA_R   = BLUE;
-            delay();
-        }
-        GPIO_PORTF_DATA_R =0x00;
+        GPIO_PORTF_DATA_R ^= RED;
+        STCTRL &= ~ENABLE;
+        STCURRENT = 0;
     }
+}
+
+void poll_sw1(void)
+{
+    if ((GPIO_PORTF_DATA_R & 0x01) == 0) GPIO_PORTF_DATA_R |= BLUE;
+    else GPIO_PORTF_DATA_R &= ~BLUE;
 }
