@@ -1,61 +1,47 @@
 #include <stdint.h>
 #include "tm4c123gh6pm.h"
 
-#define TAEN    (1<<0)
-#define TAAMS   (1<<3)
-#define TAPWML  (1<<6)
-#define RED     (1<<1)
-#define BLUE    (1<<2)
-void delay(void) {
-    int i;
-    for (i = 0; i < 500000; i++);
+uint32_t f_add(uint32_t a, uint32_t b)
+{
+    uint32_t e1,e2,m1,m2,result,e;
+    //Unpacking
+    e1 = (a >> 23) & 0x000000FF;
+    e2 = (b >> 23) & 0x000000FF;
+    m1 = (a & 0x007FFFFF) | 0x00800000;
+    m2 = (b & 0x007FFFFF) | 0x00800000;
+
+    //Exponent Check
+    if(e1>e2)
+    {
+        m2 = m2 >> (e1-e2);
+        e  = e1;
+    }
+    else
+    {
+        m1 = m1 >> (e2-e1);
+        e  = e2;
+    }
+
+    //Addition and Overflow Check
+    result = m1 + m2;
+    if((result & 0x01000000) != 0)
+    {
+        e = e + 1;
+        result = result >> 1;
+    }
+    result = (result & 0x007FFFFF) | (e<<23);
+    return result;
 }
 
-int main(void)
+void main(void)
 {
-    // Enable Port F for switches
-    SYSCTL_RCGC2_R     |= 0x20;
-    GPIO_PORTF_LOCK_R   = 0x4C4F434B;
-    GPIO_PORTF_CR_R     = 0x1F;
-    GPIO_PORTF_DIR_R    = 0x0E;
-    GPIO_PORTF_DEN_R   |= 0x1F;
-    GPIO_PORTF_PUR_R   |= 0x11;
-
-    // Enable Wide Timer 0 and Port C
-    SYSCTL_RCGCWTIMER_R |= (1<<0);
-    SYSCTL_RCGC2_R |= (1<<2);
-
-    // Configure PC4 for WT0CCP0
-    GPIO_PORTC_AFSEL_R |= (1<<4);
-    GPIO_PORTC_PCTL_R = (GPIO_PORTC_PCTL_R & 0xFFF0FFFF) | (7<<16);
-    GPIO_PORTC_DEN_R |= (1<<4);
-    GPIO_PORTC_DIR_R |= (1<<4);
-
-    // Configure Wide Timer 0A for PWM
-    WTIMER0_CTL_R &= ~TAEN;           // Disable Timer A
-    WTIMER0_CFG_R = 0x04;             // PWM mode
-    WTIMER0_TAMR_R = 0x0A;            
-    WTIMER0_CTL_R &= ~TAPWML;         // Non-inverted PWM
-    WTIMER0_TAPR_R = 0;               // No prescaler
-    WTIMER0_TAILR_R = 319;            // 50 kHz
-    WTIMER0_TAMATCHR_R = 159;         // 50% duty
-    WTIMER0_CTL_R |= TAEN;            // Enable Timer A
-
-    while(1)
+    union
     {
-        if ((GPIO_PORTF_DATA_R & 0x01) == 0) {  // SW2 pressed
-            WTIMER0_TAMATCHR_R += 16;
-            if (WTIMER0_TAMATCHR_R > WTIMER0_TAILR_R - 16)
-                WTIMER0_TAMATCHR_R = WTIMER0_TAILR_R - 16;
-            GPIO_PORTF_DATA_R   = RED;
-            delay();
-        }
-        if ((GPIO_PORTF_DATA_R & 0x10) == 0) {  // SW1 pressed
-            if (WTIMER0_TAMATCHR_R > 16)
-                WTIMER0_TAMATCHR_R -= 16;
-            GPIO_PORTF_DATA_R   = BLUE;
-            delay();
-        }
-        GPIO_PORTF_DATA_R =0x00;
-    }
+        uint32_t u;     // access as 32-bit raw bits
+        float f;        // access as a floating-point number
+    } a,b,result;
+    a.f = 25;
+    b.f = 0.2;
+    result.u = f_add(a.u,b.u);
+    while (1);
 }
