@@ -23,7 +23,7 @@
 //*****************************************************************************
 
 #include <stdint.h>
-
+#include "tm4c123gh6pm.h"
 //*****************************************************************************
 //
 // Forward declaration of the default fault handlers.
@@ -273,11 +273,18 @@ NmiSR(void)
 static void
 FaultISR(void)
 {
+    SYSCTL_RCGC2_R |=   0x00000020;
+    GPIO_PORTF_LOCK_R = 0x4C4F434B;
+    GPIO_PORTF_CR_R   = 0x17;
+    GPIO_PORTF_DEN_R  = 0x17;
+    GPIO_PORTF_DIR_R  = 0x06;
+    GPIO_PORTF_PUR_R  = 0x11;
     //
     // Enter an infinite loop.
     //
     while(1)
     {
+        GPIO_PORTF_DATA_R = 0x02;
     }
 }
 
